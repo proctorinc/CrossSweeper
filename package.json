@@ -1,0 +1,14 @@
+{
+  "name": "cross-sweeper",
+  "version": "1.0.0",
+  "description": "Word game mix between minesweeper and a crossword puzzle",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "author": "Matt Proctor",
+  "license": "ISC",
+  "dependencies": {
+    "readline": "^1.3.0"
+  }
+}
