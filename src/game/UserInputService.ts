@@ -1,5 +1,5 @@
 import readline from "readline";
-import Coordinates from "../game/Coordinates";
+import Coordinates from "./Coordinates";
 
 class UserInputService {
   commandLineInterface: readline.Interface;

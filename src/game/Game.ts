@@ -1,41 +1,97 @@
+import { BoardStats, GameState, GameStep } from "../routes/game/game.model";
 import Board from "./Board";
 import Coordinates from "./Coordinates";
-import UserInputService from "../services/UserInputService";
-
-const SOLUTION = [
-  ["J", "I", "P", "I", "J", "A", "P", "A", " ", "R", "E", "E", "F"],
-  ["A", " ", "A", " ", "U", " ", "O", " ", "C", " ", "R", " ", "I"],
-  ["N", "A", "T", "A", "L", " ", "P", "R", "O", "T", "O", "N", "S"],
-  ["E", " ", "E", " ", "E", " ", "L", " ", "R", " ", "D", " ", "H"],
-  [" ", "P", "L", "A", "S", "M", "A", " ", "T", "W", "E", "E", "T"],
-  ["A", " ", "L", " ", " ", " ", "R", " ", "E", " ", " ", " ", "A"],
-  ["C", "R", "A", "N", "E", "S", " ", "O", "X", "Y", "G", "E", "N"],
-  ["Q", " ", " ", " ", "G", " ", "S", " ", " ", " ", "O", " ", "K"],
-  ["U", "M", "B", "E", "R", " ", "P", "A", "V", "L", "O", "V", " "],
-  ["I", " ", "L", " ", "E", " ", "I", " ", "E", " ", "D", " ", "O"],
-  ["R", "O", "O", "S", "T", "E", "R", " ", "R", "O", "A", "C", "H"],
-  ["E", " ", "O", " ", "S", " ", "E", " ", "N", " ", "L", " ", "M"],
-  ["D", "O", "D", "O", " ", "G", "A", "Z", "E", "L", "L", "E", "S"],
-];
+import { v4 as uuidv4 } from "uuid";
 
 class Game {
-  userInputService: UserInputService;
+  id: string;
   board: Board;
   isGameOver: boolean;
+  step: GameStep;
+  lastPickedLocation: Coordinates | null;
+  totalCellsClicked: number;
+  totalGuesses: number;
+  score: number;
 
-  constructor(userInputService: UserInputService) {
-    this.userInputService = userInputService;
-    this.board = new Board(SOLUTION);
-    this.isGameOver = false;
+  constructor(
+    id: string,
+    board: Board,
+    step: GameStep = GameStep.chooseCell,
+    lastPickedLocation: Coordinates | null = null,
+    totalCellsClicked: number = 0,
+    totalGuesses: number = 0,
+    score: number = 0
+  ) {
+    this.id = id;
+    this.board = board;
+    this.step = step;
+    this.lastPickedLocation = lastPickedLocation;
+    this.totalGuesses = totalGuesses;
+    this.totalCellsClicked = totalCellsClicked;
+    this.score = score;
   }
 
-  async play() {
-    console.log("Welcome to Cross-Sweeper!");
+  getState(): GameState {
+    const boardStats = this.board.getBoardStatistics();
+    const score = this.getBoardScore(boardStats);
 
-    while (!this.isGameOver) {
-      this.board.display();
-      const location = await this.promptUserForLocationUntilValid();
+    return {
+      gameId: this.id,
+      board: this.board.toJson(),
+      step: this.step,
+      // step: boardStats.isBoardCompleted ? GameStep.gameOver : this.step,
+      lastPickedLocation: this.lastPickedLocation
+        ? this.lastPickedLocation.toJson()
+        : null,
+      totalGuesses: this.totalGuesses,
+      totalCellsClicked: this.totalCellsClicked,
+      score: score,
+    };
+  }
+
+  static loadBoardState(state: GameState): Game {
+    const id = state.gameId;
+    const board = Board.loadFromJson(state.board);
+    const step = state.step;
+    const lastPickedLocation = state.lastPickedLocation
+      ? Coordinates.loadFromJson(state.lastPickedLocation)
+      : null;
+    const totalCellsClicked = state.totalCellsClicked;
+    const totalGuesses = state.totalGuesses;
+    const score = state.score;
+
+    return new Game(
+      id,
+      board,
+      step,
+      lastPickedLocation,
+      totalCellsClicked,
+      totalGuesses,
+      score
+    );
+  }
+
+  static createFromSolution(solution: string[][]): Game {
+    const id = uuidv4();
+    const board = Board.createFromSolution(solution);
+
+    return new Game(id, board);
+  }
+
+  getBoardScore(boardStats: BoardStats): number {
+    return (
+      boardStats.correctEmptyCells * 1 +
+      boardStats.correctLetterCells * 10 -
+      this.totalGuesses * 3 -
+      this.totalCellsClicked * 3
+    );
+  }
+
+  chooseCell(row: number, column: number) {
+    if (this.step === GameStep.chooseCell) {
+      const location = new Coordinates(row, column);
       const cell = this.board.chooseCell(location);
+      this.lastPickedLocation = location;
 
       // If horizontal word exists, guess and add it to the board
       const horizontalWordCells = this.board.getHorizontalWordCells(cell);
@@ -43,58 +99,76 @@ class Game {
       // If vertical word exists, guess and add it to the board
       const verticalWordCells = this.board.getVerticalWordCells(cell);
 
-      this.board.display();
+      const horizontalCurrentValue = horizontalWordCells
+        ? this.board.getCurrentValueFromCellList(horizontalWordCells)
+        : null;
 
-      if (horizontalWordCells) {
-        const horizontalCurrentValue =
-          this.board.getCurrentValueFromCellList(horizontalWordCells);
-        const horizontalSolution =
-          this.board.getSolutionFromCellList(horizontalWordCells);
+      const verticalCurrentValue = verticalWordCells
+        ? this.board.getCurrentValueFromCellList(verticalWordCells)
+        : null;
 
-        console.log(`\n\nGuess the horizontal word: ${horizontalCurrentValue}`);
-        console.log(`(Hint: solution = ${horizontalSolution})`);
-        const guess = await this.userInputService.getUserHorizontalGuess();
-
-        this.board.updateCellsWithGuess(guess, horizontalWordCells);
-        this.board.display();
+      if (horizontalCurrentValue) {
+        this.step = GameStep.guessHorizontal;
+        this.board.highlightCells(horizontalWordCells);
+      } else if (verticalCurrentValue) {
+        this.step = GameStep.guessVertical;
+        this.board.highlightCells(verticalWordCells);
       }
 
-      if (verticalWordCells) {
-        const verticalCurrentValue =
-          this.board.getCurrentValueFromCellList(verticalWordCells);
-        const verticalSolution =
-          this.board.getSolutionFromCellList(verticalWordCells);
+      // Increate total cells clicked
+      this.totalCellsClicked++;
 
-        console.log(`\n\nGuess the vertical word: ${verticalCurrentValue}`);
-        console.log(`(Hint: solution = ${verticalSolution})`);
-        const guess = await this.userInputService.getUserHorizontalGuess();
-
-        this.board.updateCellsWithGuess(guess, verticalWordCells);
-        this.board.display();
-      }
-
-      // Whether correct or not, if guess exists add the guesses to the board
-      // The board will render whether its correct or not
-      // At the end of the game loop, run a board validation to check for completion
+      return {
+        horizontalWord: horizontalCurrentValue,
+        verticalWord: verticalCurrentValue,
+      };
+    } else {
+      throw new Error(`Invalid game step. Current step is: ${this.step}`);
     }
-
-    console.log("Game Over. Thanks for playing!");
   }
 
-  async promptUserForLocationUntilValid() {
-    var location = new Coordinates(-1, -1);
+  skipGuess() {
+    this.board.unhighlightAllCells();
+    const cell = this.board.getCell(this.lastPickedLocation);
+    const verticalWordCells = this.board.getVerticalWordCells(cell);
 
-    // Run until user enters a valid choice
-    while (!this.board.isValidCellLocation(location)) {
-      // Prompt for choice
-      location = await this.userInputService.getLocationChoiceFromUser();
-
-      if (!this.board.isValidCellLocation(location)) {
-        console.log("Invalid choice. Try again");
-      }
+    if (this.step === GameStep.guessHorizontal && verticalWordCells) {
+      // If vertical word needs to be guessed
+      this.step = GameStep.guessVertical;
+      this.board.highlightCells(verticalWordCells);
+    } else {
+      this.step = GameStep.chooseCell;
     }
+  }
 
-    return location;
+  guessWord(guess: string) {
+    this.board.unhighlightAllCells();
+    const cell = this.board.getCell(this.lastPickedLocation);
+    const verticalWordCells = this.board.getVerticalWordCells(cell);
+
+    if (this.step === GameStep.guessHorizontal) {
+      // If horizontal word exists, guess and add it to the board
+      const horizontalWordCells = this.board.getHorizontalWordCells(cell);
+
+      this.board.updateCellsWithGuess(guess, horizontalWordCells);
+
+      // Increase guess count
+      this.totalGuesses++;
+
+      // If vertical word needs to be guessed
+      if (verticalWordCells) {
+        this.step = GameStep.guessVertical;
+        this.board.highlightCells(verticalWordCells);
+      } else {
+        this.step = GameStep.chooseCell;
+      }
+    } else if (this.step === GameStep.guessVertical) {
+      this.board.updateCellsWithGuess(guess, verticalWordCells);
+
+      // Increase guess count
+      this.totalGuesses++;
+      this.step = GameStep.chooseCell;
+    }
   }
 }
 

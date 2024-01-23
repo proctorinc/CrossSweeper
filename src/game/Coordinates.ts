@@ -22,6 +22,14 @@ class Coordinates {
   right(): Coordinates {
     return new Coordinates(this.row, this.column + 1);
   }
+
+  toJson() {
+    return { row: this.row, column: this.column };
+  }
+
+  static loadFromJson(json: { row: number; column: number }) {
+    return new Coordinates(json.row, json.column);
+  }
 }
 
 export default Coordinates;

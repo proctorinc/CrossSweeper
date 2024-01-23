@@ -1,25 +1,65 @@
-import Cell from "./Cell";
+import { BoardStats } from "../routes/game/game.model";
+import Cell, { JsonCell } from "./Cell";
 import Coordinates from "./Coordinates";
 
 class Board {
   cellMatrix: Cell[][];
 
-  constructor(board: string[][]) {
-    this.cellMatrix = this.initializeCellMatrix(board);
+  constructor(cells: Cell[][]) {
+    this.cellMatrix = cells;
   }
 
-  initializeCellMatrix(board: string[][]): Cell[][] {
-    const matrix: Cell[][] = [];
-
-    board.map((row, i) => {
-      const cellRow: Cell[] = [];
-      row.map((value, j) => {
-        cellRow.push(new Cell(i, j, value));
+  static createFromSolution(board: string[][]): Board {
+    const cells = board.map((row, i) => {
+      return row.map((value, j) => {
+        return Cell.createDefaultCell(i, j, value);
       });
-      matrix.push(cellRow);
     });
 
-    return matrix;
+    return new Board(cells);
+  }
+
+  static loadFromJson(
+    jsonBoard: {
+      value: string;
+      status: string;
+      isHighlighted: boolean;
+    }[][]
+  ) {
+    const board = jsonBoard.map((row, i) => {
+      return row.map((cell: JsonCell, j) => {
+        return Cell.createFromJson(cell, i, j);
+      });
+    });
+    return new Board(board);
+  }
+
+  getBoardStatistics(): BoardStats {
+    let correctLetterCells = 0;
+    let correctEmptyCells = 0;
+    let incorrectCells = 0;
+    let totalCells = 0;
+
+    this.cellMatrix.map((row) => {
+      row.map((cell) => {
+        if (cell.isIncorrect()) {
+          incorrectCells++;
+        } else if (cell.isCorrect() && cell.isEmpty()) {
+          correctEmptyCells++;
+        } else if (cell.isCorrect()) {
+          correctLetterCells++;
+        }
+      });
+      totalCells++;
+    });
+
+    return {
+      correctLetterCells,
+      correctEmptyCells,
+      incorrectCells,
+      totalCells,
+      isBoardCompleted: correctEmptyCells + correctLetterCells === totalCells,
+    };
   }
 
   getCell(location: Coordinates) {
@@ -28,11 +68,18 @@ class Board {
   }
 
   isValidCellLocation(location: Coordinates): boolean {
+    console.log("is valid cell location?");
+    console.log(location.row, location.column);
     try {
+      console.log("testing testing 123");
       const result = this.getCell(location);
+      console.log("yes?");
       console.log(result);
+      console.log(result !== undefined);
       return result !== undefined;
     } catch (e) {
+      console.log("No!");
+      console.log(e.message);
       return false;
     }
   }
@@ -68,13 +115,51 @@ class Board {
   chooseCell(location: Coordinates): Cell {
     const cell = this.getCell(location);
 
-    cell.revealSolution();
     if (cell.isEmpty()) {
-      this.revealAdjacentCells(cell);
+      // this.revealAdjacentCells(cell);
+      this.revealChainedEmptyCells(cell);
+    }
+    if (cell.isHidden()) {
+      cell.revealSolution();
     }
     this.display();
 
     return cell;
+  }
+
+  revealChainedEmptyCells(cell: Cell) {
+    // Try in case cell is off the board
+    // Check all cells directly adjacent to the cell
+    if (cell.isHidden()) {
+      cell.revealSolution();
+      // revealAdjacentCells(row, col);
+
+      if (this.isValidCellLocation(cell.location.up())) {
+        const adjacentCell = this.getCell(cell.location.up());
+        if (adjacentCell.isEmpty() && adjacentCell.isHidden()) {
+          this.revealChainedEmptyCells(adjacentCell);
+        }
+      }
+      if (this.isValidCellLocation(cell.location.down())) {
+        const adjacentCell = this.getCell(cell.location.down());
+        if (adjacentCell.isEmpty() && adjacentCell.isHidden()) {
+          this.revealChainedEmptyCells(adjacentCell);
+        }
+      }
+      if (this.isValidCellLocation(cell.location.left())) {
+        const adjacentCell = this.getCell(cell.location.left());
+        if (adjacentCell.isEmpty() && adjacentCell.isHidden()) {
+          this.revealChainedEmptyCells(adjacentCell);
+        }
+      }
+      if (this.isValidCellLocation(cell.location.right())) {
+        const adjacentCell = this.getCell(cell.location.right());
+        if (adjacentCell.isEmpty() && adjacentCell.isHidden()) {
+          this.revealChainedEmptyCells(adjacentCell);
+        }
+      }
+      this.revealAdjacentCells(cell);
+    }
   }
 
   getAdjacentCells(cell: Cell): Cell[] {
@@ -118,6 +203,7 @@ class Board {
     var nextCellLeft: Cell | null = cell;
     var nextCellRight: Cell | null = cell;
 
+    console.log("test1");
     while (
       nextCellLeft !== null &&
       nextCellLeft !== undefined &&
@@ -132,10 +218,13 @@ class Board {
         nextCellLeft !== undefined &&
         !nextCellLeft.isEmpty()
       ) {
-        nextCellLeft.highlight();
+        console.log("unshift1");
         cells.unshift(nextCellLeft);
       }
     }
+
+    console.log("test2");
+    console.log(nextCellRight);
 
     while (
       nextCellRight !== null &&
@@ -151,11 +240,12 @@ class Board {
         nextCellRight !== undefined &&
         !nextCellRight.isEmpty()
       ) {
-        nextCellRight.highlight();
+        console.log("push2");
         cells.push(nextCellRight);
       }
     }
 
+    console.log("End result", cells.length > 1 ? cells : null);
     return cells.length > 1 ? cells : null;
   }
 
@@ -164,11 +254,14 @@ class Board {
     var nextCellUp: Cell | null = cell;
     var nextCellDown: Cell | null = cell;
 
+    console.log("next cells up");
     while (
       nextCellUp !== null &&
       nextCellUp !== undefined &&
+      this.isValidCellLocation(nextCellUp.location.up()) &&
       !nextCellUp.isEmpty()
     ) {
+      console.log(nextCellUp.location.up());
       nextCellUp = this.getCell(nextCellUp.location.up());
 
       if (
@@ -177,11 +270,11 @@ class Board {
         this.isValidCellLocation(nextCellUp.location.up()) &&
         !nextCellUp.isEmpty()
       ) {
-        nextCellUp.highlight();
         cells.unshift(nextCellUp);
       }
     }
 
+    console.log("next cells down");
     while (
       nextCellDown !== null &&
       nextCellDown !== undefined &&
@@ -193,9 +286,9 @@ class Board {
       if (
         nextCellDown !== null &&
         nextCellDown !== undefined &&
+        this.isValidCellLocation(nextCellDown.location.down()) &&
         !nextCellDown.isEmpty()
       ) {
-        nextCellDown.highlight();
         cells.push(nextCellDown);
       }
     }
@@ -203,16 +296,22 @@ class Board {
     return cells.length > 1 ? cells : null;
   }
 
+  highlightCells(cells: Cell[]): void {
+    cells.map((cell) => cell.highlight());
+  }
+
+  unhighlightAllCells(): void {
+    this.cellMatrix.map((row) => row.map((cell) => cell.unhighlight()));
+  }
+
   getSolutionFromCellList(cells: Cell[]): string {
     return cells.map((cell: Cell) => cell.solution).join("");
   }
 
-  getCurrentValueFromCellList(cells: Cell[]): string {
-    return cells
-      .map((cell: Cell) =>
-        cell.currentValue === Cell.DEFAULT_VALUE ? "_" : cell.currentValue
-      )
-      .join(" ");
+  getCurrentValueFromCellList(cells: Cell[]): (string | null)[] {
+    return cells.map((cell: Cell) =>
+      cell.isCorrect() ? cell.currentValue : null
+    );
   }
 
   updateCellsWithGuess(guess: string, cells: Cell[]) {
@@ -266,6 +365,14 @@ class Board {
 
     this.cellMatrix[0].map(() => process.stdout.write("#\t"));
     console.log("");
+  }
+
+  toJson() {
+    return this.cellMatrix.map((row: Cell[]) => {
+      return row.map((cell: Cell) => {
+        return cell.toJson();
+      });
+    });
   }
 }
 
